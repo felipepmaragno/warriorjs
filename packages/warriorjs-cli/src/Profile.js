@@ -16,7 +16,7 @@ const playerCodeFile = 'Player.js';
 const readmeFile = 'README.md';
 
 // Properties ignored when saving the profile.
-const ignoredProperties = ['directoryPath'];
+const ignoredProperties = ['directoryPath', 'tower'];
 
 /** Class representing a profile. */
 class Profile {
@@ -131,6 +131,7 @@ class Profile {
     this.averageGrade = null;
     this.currentEpicScore = 0;
     this.currentEpicGrades = {};
+    this.tower = null;
   }
 
   /**

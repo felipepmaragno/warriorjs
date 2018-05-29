@@ -8,9 +8,9 @@ import { getLevel, runLevel } from '@warriorjs/core';
 import GameError from './GameError';
 import Profile from './Profile';
 import ProfileGenerator from './ProfileGenerator';
-import Tower from './Tower';
 import getLevelConfig from './utils/getLevelConfig';
 import getWarriorNameSuggestions from './utils/getWarriorNameSuggestions';
+import loadTowers from './loadTowers';
 import printFailureLine from './ui/printFailureLine';
 import printLevelReport from './ui/printLevelReport';
 import printLevel from './ui/printLevel';
@@ -53,8 +53,10 @@ class Game {
     printLine('Welcome to WarriorJS');
 
     try {
+      this.towers = new Map(loadTowers().map(tower => [tower.name, tower]));
+
       this.profile = await this.loadProfile();
-      this.tower = Tower.getTowerByName(this.profile.towerName);
+
       if (this.profile.isEpic()) {
         await this.playEpicMode();
       } else {
@@ -75,7 +77,7 @@ class Game {
   /**
    * Loads a profile into the game.
    *
-   * If there is a .profile file in the run directory, that profile will be
+   * If the game is being run from a profile directory, that profile will be
    * loaded.
    *
    * If not, the player will be given the option to choose a profile.
@@ -83,12 +85,20 @@ class Game {
    * @returns {Profile} The loaded profile.
    */
   async loadProfile() {
-    const profile = await Profile.load(this.runDirectoryPath);
-    if (profile) {
-      return profile;
+    let profile = await Profile.load(this.runDirectoryPath);
+    if (!profile) {
+      profile = await this.chooseProfile();
     }
 
-    return this.chooseProfile();
+    const { towerName } = profile;
+    profile.tower = this.towers.get(towerName);
+    if (!profile.tower) {
+      throw new GameError(
+        `Unable to find tower '${towerName}', make sure it is available.`,
+      );
+    }
+
+    return profile;
   }
 
   /**
@@ -144,8 +154,7 @@ class Game {
       );
     }
 
-    const towerChoices = Tower.getTowers();
-    const tower = await requestChoice('Choose a tower:', towerChoices);
+    const tower = await requestChoice('Choose a tower:', this.towers);
 
     const profileDirectoryPath = path.join(
       this.gameDirectoryPath,
@@ -255,7 +264,7 @@ class Game {
     this.profile.currentEpicGrades = {};
 
     if (this.practiceLevel) {
-      const hasPracticeLevel = this.tower.hasLevel(this.practiceLevel);
+      const hasPracticeLevel = this.profile.tower.hasLevel(this.practiceLevel);
       if (!hasPracticeLevel) {
         throw new GameError(
           'Unable to practice non-existent level, try another.',
@@ -303,7 +312,7 @@ class Game {
    * @returns {boolean} Whether playing can continue or not (for epic mode),
    */
   async playLevel(levelNumber) {
-    const levelConfig = getLevelConfig(levelNumber, this.tower, this.profile);
+    const levelConfig = getLevelConfig(levelNumber, this.profile);
 
     const level = getLevel(levelConfig);
     printLevel(level);
@@ -340,7 +349,7 @@ class Game {
       return false;
     }
 
-    const hasNextLevel = this.tower.hasLevel(levelNumber + 1);
+    const hasNextLevel = this.profile.tower.hasLevel(levelNumber + 1);
 
     if (hasNextLevel) {
       printSuccessLine('Success! You have found the stairs.');
@@ -376,7 +385,7 @@ class Game {
    * continue on to epic mode.
    */
   async requestNextLevel() {
-    if (this.tower.hasLevel(this.profile.levelNumber + 1)) {
+    if (this.profile.tower.hasLevel(this.profile.levelNumber + 1)) {
       const continueToNextLevel =
         this.assumeYes ||
         (await requestConfirmation(
@@ -419,11 +428,7 @@ class Game {
    * Generates the profile files.
    */
   async generateProfileFiles() {
-    const levelConfig = getLevelConfig(
-      this.profile.levelNumber,
-      this.tower,
-      this.profile,
-    );
+    const levelConfig = getLevelConfig(this.profile.levelNumber, this.profile);
     const level = getLevel(levelConfig);
     await new ProfileGenerator(this.profile, level).generate();
   }
